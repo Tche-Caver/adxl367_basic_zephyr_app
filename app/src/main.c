@@ -1,78 +1,45 @@
-/*
- * Copyright (c) 2021 Nordic Semiconductor ASA
- * SPDX-License-Identifier: Apache-2.0
- */
-
 #include <zephyr/kernel.h>
-#include <zephyr/drivers/sensor.h>
 #include <zephyr/logging/log.h>
-
-#include <app/drivers/blink.h>
+#include <zephyr/drivers/sensor.h>
+#include <zephyr/dt-bindings/sensor/adxl367.h>
 
 #include <app_version.h>
 
 LOG_MODULE_REGISTER(main, CONFIG_APP_LOG_LEVEL);
 
-#define BLINK_PERIOD_MS_STEP 100U
-#define BLINK_PERIOD_MS_MAX  1000U
 
 int main(void)
 {
-	int ret;
-	unsigned int period_ms = BLINK_PERIOD_MS_MAX;
-	const struct device *sensor, *blink;
-	struct sensor_value last_val = { 0 }, val;
 
-	printk("Zephyr Example Application %s\n", APP_VERSION_STRING);
+	const struct device *accelerometer;
 
-	sensor = DEVICE_DT_GET(DT_NODELABEL(example_sensor));
-	if (!device_is_ready(sensor)) {
-		LOG_ERR("Sensor not ready");
-		return 0;
-	}
+	struct sensor_value  valx,  valy,  valz;
+	double output [3];
 
-	blink = DEVICE_DT_GET(DT_NODELABEL(blink_led));
-	if (!device_is_ready(blink)) {
-		LOG_ERR("Blink LED not ready");
-		return 0;
-	}
+	printk("ADXL367 sample application\n");
 
-	ret = blink_off(blink);
-	if (ret < 0) {
-		LOG_ERR("Could not turn off LED (%d)", ret);
-		return 0;
-	}
-
-	printk("Use the sensor to change LED blinking period\n");
+	//Get device structure pointer from Devicetree using the alias specified in Devicetree
+	accelerometer = DEVICE_DT_GET(DT_ALIAS(accel));
 
 	while (1) {
-		ret = sensor_sample_fetch(sensor);
-		if (ret < 0) {
-			LOG_ERR("Could not fetch sample (%d)", ret);
-			return 0;
-		}
 
-		ret = sensor_channel_get(sensor, SENSOR_CHAN_PROX, &val);
-		if (ret < 0) {
-			LOG_ERR("Could not get sample (%d)", ret);
-			return 0;
-		}
+	//Obtain a sample from the accelerometer.  This sample will be stored internally in the driver
+	//Provide device struct pointer as a parameter
+	sensor_sample_fetch(accelerometer);
 
-		if ((last_val.val1 == 0) && (val.val1 == 1)) {
-			if (period_ms == 0U) {
-				period_ms = BLINK_PERIOD_MS_MAX;
-			} else {
-				period_ms -= BLINK_PERIOD_MS_STEP;
-			}
+	//After a sample is obtained, return a value to the application, in the form of a sensor_value struct
+	sensor_channel_get(accelerometer,  SENSOR_CHAN_ACCEL_X, &valx);
+	sensor_channel_get(accelerometer,  SENSOR_CHAN_ACCEL_Y, &valy);
+	sensor_channel_get(accelerometer,  SENSOR_CHAN_ACCEL_Z, &valz);
 
-			printk("Proximity detected, setting LED period to %u ms\n",
-			       period_ms);
-			blink_set_period_ms(blink, period_ms);
-		}
+	//Convert the two int32 values in the struct to a double
+	output[0] = (double) valx.val1 + (double) valx.val2 / 1000000;
+	output[1] = (double) valy.val1 + (double) valy.val2 / 1000000;
+	output[2] = (double) valz.val1 + (double) valz.val2 / 1000000;
 
-		last_val = val;
+	//Output values
+	printk("X: %f, Y: %f, Z: %f\n", output[0], output[1], output[2]);
 
-		k_sleep(K_MSEC(100));
 	}
 
 	return 0;
